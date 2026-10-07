@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CapCode: capacitor marking decoder</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#f4f7fb;color:#1d2b3f;min-height:100vh;padding:24px 14px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+h1{font-size:22px;margin-bottom:2px}
+.sub{color:#5b6b80;font-size:13px;margin-bottom:18px}
+.card{background:#fff;border-radius:14px;box-shadow:0 6px 24px rgba(30,50,80,.09);padding:20px;margin-bottom:16px}
+label{font-size:12px;font-weight:600;color:#5b6b80;display:block;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.04em}
+input,select{width:100%;padding:10px 12px;border:1.5px solid #d5deeb;border-radius:9px;font-size:16px;font-family:inherit}
+input:focus{outline:none;border-color:#4d7ec9}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.chip{padding:7px 12px;border-radius:999px;border:1.5px solid #d5deeb;background:#fff;font-size:13px;cursor:pointer;color:#2b4a7a}
+.chip:hover{border-color:#4d7ec9;background:#eef4fc}
+.result{margin-top:14px;padding:14px;border-radius:10px;background:#eef4fc;display:none}
+.result.show{display:block}
+.big{font-size:20px;font-weight:700;color:#1f4e8c}
+.kv{font-size:13px;color:#44576f;margin-top:4px}
+.err{color:#b3261e}
+.row2{display:flex;gap:10px}.row2>div{flex:1}
+a{color:#2f6ec4;text-decoration:none}
+footer{font-size:12px;color:#7d8ca0;text-align:center;margin-top:6px}
+</style>
+</head>
+<body>
+<main>
+<h1>CapCode</h1>
+<p class="sub">Decode capacitor markings and estimate electrolytic lifetime</p>
+<div class="card">
+<label for="code">Marking code</label>
+<input id="code" placeholder="104, 4u7, n47, 103K ..." autocomplete="off">
+<div class="chips" id="chips"></div>
+<div class="result" id="dres"></div>
+</div>
+<div class="card">
+<label>Reverse: value to marking</label>
+<div class="row2">
+<div><input id="val" placeholder="100000" inputmode="decimal"></div>
+<div><select id="unit"><option value="1">pF</option><option value="1000">nF</option><option value="1000000" selected>uF</option></select></div>
+</div>
+<div class="result" id="eres"></div>
+</div>
+<div class="card">
+<label>Electrolytic lifetime estimate</label>
+<div class="row2">
+<div><label for="hrs">Rated hours</label><input id="hrs" value="2000" inputmode="numeric"></div>
+<div><label for="rt">Rated &deg;C</label><input id="rt" value="105" inputmode="numeric"></div>
+<div><label for="at">Actual &deg;C</label><input id="at" value="85" inputmode="numeric"></div>
+</div>
+<div class="result" id="lres"></div>
+</div>
+<footer>Static page, no data leaves your browser. <a href="index.html">About</a></footer>
+</main>
+<script src="engine.js"></script>
+<script>
+var $=function(id){return document.getElementById(id)};
+function dec(){
+  var c=$('code').value.trim();
+  var box=$('dres');
+  if(!c){box.classList.remove('show');return;}
+  var r=CapCode.decode(c);
+  box.classList.add('show');
+  if(!r.ok){box.innerHTML='<span class="err">'+r.error+'</span>';return;}
+  var h='<div class="big">'+r.pretty+'</div>';
+  h+='<div class="kv">'+r.pF+' pF'+(r.tolLetter?' &middot; tolerance '+r.tolLetter+' ('+r.tolPct+'%)':'')+'</div>';
+  var enc=CapCode.encode(r.pF);
+  var marks=[];
+  if(enc.eia&&enc.eia!==c)marks.push('EIA '+enc.eia);
+  if(enc.shorthand&&enc.shorthand.toLowerCase()!==c.toLowerCase())marks.push('shorthand '+enc.shorthand);
+  if(marks.length)h+='<div class="kv">also marked: '+marks.join(' &middot; ')+'</div>';
+  box.innerHTML=h;
+}
+function enc(){
+  var v=parseFloat($('val').value)*parseFloat($('unit').value);
+  var box=$('eres');
+  if(!(v>0)){box.classList.remove('show');return;}
+  var r=CapCode.encode(v);
+  box.classList.add('show');
+  var h='<div class="big">'+(r.eia||r.shorthand||r.pretty)+'</div>';
+  var bits=[];
+  if(r.eia&&r.shorthand)bits.push(r.shorthand);
+  bits.push(r.pretty);
+  h+='<div class="kv">'+bits.join(' &middot; ')+'</div>';
+  box.innerHTML=h;
+}
+function life(){
+  var h=parseFloat($('hrs').value),rt=parseFloat($('rt').value),at=parseFloat($('at').value);
+  var box=$('lres');
+  if(!(h>0)||isNaN(rt)||isNaN(at)){box.classList.remove('show');return;}
+  var r=CapCode.lifetime(h,rt,at);
+  box.classList.add('show');
+  var yrs=(r/8760);
+  box.innerHTML='<div class="big">'+r.toLocaleString()+' hours</div><div class="kv">'+yrs.toFixed(1)+' years continuous at '+at+'&deg;C (Arrhenius rule, doubles per 10&deg;C below rating)</div>';
+}
+var examples=['104','470','225','103K','4u7','n47','2n2','4R7'];
+examples.forEach(function(e){
+  var b=document.createElement('button');
+  b.className='chip';b.textContent=e;
+  b.onclick=function(){$('code').value=e;dec();};
+  $('chips').appendChild(b);
+});
+$('code').addEventListener('input',dec);
+$('val').addEventListener('input',enc);
+$('unit').addEventListener('change',enc);
+['hrs','rt','at'].forEach(function(i){$(i).addEventListener('input',life);});
+dec();enc();life();
+</script>
+</body>
+</html>
